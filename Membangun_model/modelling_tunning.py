@@ -1,10 +1,11 @@
-import os, sys, time
+import os, sys, time, json
 import pandas as pd
 import numpy as np
 import mlflow
 import mlflow.sklearn
 import joblib
 import dagshub
+import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.pipeline import Pipeline
@@ -97,32 +98,56 @@ for model_name, (model, param_grid) in models.items():
         mlflow.log_params(grid_search.best_params_)
         mlflow.log_metric("training_time", training_time)
 
-        if is_classifier:
-            acc = accuracy_score(y_test, y_pred)
-            precision = precision_score(y_test, y_pred)
-            recall = recall_score(y_test, y_pred)
-            f1 = f1_score(y_test, y_pred)
-            roc_auc = roc_auc_score(y_test, y_pred)
+        # Simpan metrik ke dict
+        metrics = {}
 
-            mlflow.log_metric("accuracy", acc)
-            mlflow.log_metric("precision", precision)
-            mlflow.log_metric("recall", recall)
-            mlflow.log_metric("f1", f1)
-            mlflow.log_metric("roc_auc", roc_auc)
+        if is_classifier:
+            metrics["accuracy"] = accuracy_score(y_test, y_pred)
+            metrics["precision"] = precision_score(y_test, y_pred)
+            metrics["recall"] = recall_score(y_test, y_pred)
+            metrics["f1"] = f1_score(y_test, y_pred)
+            metrics["roc_auc"] = roc_auc_score(y_test, y_pred)
         else:
             y_test_float = y_test.astype(float)
             y_pred_float = y_pred.astype(float)
+            metrics["mae"] = mean_absolute_error(y_test_float, y_pred_float)
+            metrics["mse"] = mean_squared_error(y_test_float, y_pred_float)
+            metrics["rmse"] = np.sqrt(metrics["mse"])
 
-            mae = mean_absolute_error(y_test_float, y_pred_float)
-            mse = mean_squared_error(y_test_float, y_pred_float)
-            rmse = np.sqrt(mse)
+        # Logging metrik ke MLflow
+        for key, value in metrics.items():
+            mlflow.log_metric(key, value)
 
-            mlflow.log_metric("mae", mae)
-            mlflow.log_metric("mse", mse)
-            mlflow.log_metric("rmse", rmse)
+        # Contoh input dan signature
+        input_example = X_test.iloc[:2]
+        signature = mlflow.models.infer_signature(X_test, y_pred)
 
-        # Logging model dan dataset
-        mlflow.sklearn.log_model(best_model, "model")
+        # Logging model
+        mlflow.sklearn.log_model(
+            sk_model=best_model,
+            artifact_path="model",
+            input_example=input_example,
+            signature=signature
+        )
+
+        # Simpan cleaned_data.csv dan log
         mlflow.log_artifact(csv_path, artifact_path="dataset")
+
+        # Simpan metrik ke JSON
+        json_path = os.path.join("metrics.json")
+        with open(json_path, "w") as f:
+            json.dump(metrics, f, indent=4)
+        mlflow.log_artifact(json_path, artifact_path="dataset")
+
+        # Buat bar chart PNG dari metrik
+        plt.figure(figsize=(8, 4))
+        plt.bar(metrics.keys(), metrics.values(), color='skyblue')
+        plt.title(f'Model Metrics - {model_name}')
+        plt.ylabel('Value')
+        plt.tight_layout()
+        png_path = os.path.join("metrics.png")
+        plt.savefig(png_path)
+        mlflow.log_artifact(png_path, artifact_path="dataset")
+        plt.close()
 
         print(f"✅ Model {model_name} selesai dan dilog.")
