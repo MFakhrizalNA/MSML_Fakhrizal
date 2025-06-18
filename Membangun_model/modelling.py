@@ -7,11 +7,7 @@ import dagshub
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score,
-    f1_score, roc_auc_score, log_loss
-)
-from sklearn.utils.multiclass import unique_labels
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, log_loss
 
 # Path ke preprocessing class
 sys.path.append(
@@ -20,7 +16,7 @@ sys.path.append(
     ))
 from preprocessing.automate_Fakhrizal import SklearnPreprocessor
 
-# Konfigurasi MLflow
+# Konfigurasi MLflow dan DagsHub
 mlflow.set_tracking_uri("https://dagshub.com/MFakhrizalNA/MSML_Fakhrizal.mlflow")
 os.environ["MLFLOW_TRACKING_USERNAME"] = "MFakhrizalNA"
 os.environ["MLFLOW_TRACKING_PASSWORD"] = "82b116729c790ec9bd93d7e8f99d7d815b531339"
@@ -28,13 +24,16 @@ os.environ["MLFLOW_TRACKING_PASSWORD"] = "82b116729c790ec9bd93d7e8f99d7d815b5313
 mlflow.set_experiment("Titanic Survival Prediction 1")
 dagshub.init(repo_owner='MFakhrizalNA', repo_name='MSML_Fakhrizal', mlflow=True)
 
-# Load data
+# Aktifkan autologging
+mlflow.sklearn.autolog(log_input_examples=True, log_model_signatures=True)
+
+# Load dataset
 csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'Eksperimen_SML_Fakhrizal', 'preprocessing', 'cleaned_data.csv'))
 data = pd.read_csv(csv_path)
 X = data.drop("Survived", axis=1)
 y = data["Survived"]
 
-# Split data
+# Split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # Preprocessing dan pipeline
@@ -50,16 +49,17 @@ pipeline = Pipeline([
     ("classifier", RandomForestClassifier(random_state=42))
 ])
 
-# Mulai manual MLflow run
-with mlflow.start_run(run_name="ManualLog - RandomForestClassifier"):
+# Mulai autologging run
+with mlflow.start_run(run_name="Autolog - RandomForestClassifier"):
     start = time.time()
     pipeline.fit(X_train, y_train)
     end = time.time()
 
-    # Prediksi dan evaluasi
+    # Prediksi
     y_pred = pipeline.predict(X_test)
     y_proba = pipeline.predict_proba(X_test)[:, 1]
 
+    # Evaluasi tambahan (autolog hanya log basic metrics)
     acc = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred)
     recall = recall_score(y_test, y_pred)
@@ -67,22 +67,15 @@ with mlflow.start_run(run_name="ManualLog - RandomForestClassifier"):
     roc_auc = roc_auc_score(y_test, y_proba)
     logloss = log_loss(y_test, y_proba)
     training_time = end - start
-
     support = y_test.value_counts().to_dict()
 
-    # Manual logging semua metrik
-    mlflow.log_metric("Accuracy", acc)
-    mlflow.log_metric("Precision", precision)
-    mlflow.log_metric("Recall", recall)
-    mlflow.log_metric("F1_Score", f1)
-    mlflow.log_metric("ROC_AUC", roc_auc)
-    mlflow.log_metric("Log_Loss", logloss)  # metrik tambahan 1
-    mlflow.log_metric("Training_Time", training_time)  # metrik tambahan 2
+    # Log metrik tambahan manual (optional)
+    mlflow.log_metric("Log_Loss", logloss)
+    mlflow.log_metric("Training_Time", training_time)
     mlflow.log_metric("Support_Positive", support.get(1, 0))
     mlflow.log_metric("Support_Negative", support.get(0, 0))
 
-    # Logging model dan artefak
-    mlflow.sklearn.log_model(pipeline, "model")
+    # Logging dataset sebagai artefak
     mlflow.log_artifact(csv_path, artifact_path="dataset")
 
     # Tampilkan hasil
