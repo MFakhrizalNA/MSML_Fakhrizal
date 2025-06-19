@@ -1,19 +1,25 @@
-import sys, os
+import sys, os, json
 import pandas as pd
-import joblib
 import numpy as np
+import requests
 from flask import Flask, request, render_template, Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
-# Tambahkan path ke preprocessing
+# Tambahkan path ke modul preprocessing
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'Workflow-CI', 'MLProject')))
 from preprocessing.automate_Fakhrizal import SklearnPreprocessor
 
 app = Flask(__name__)
 
-# Path ke model
-model_path = 'D:\Submission\Membangun_sistem_machine_learning\Workflow-CI\models\Forest_model.pkl'
-model = joblib.load(model_path)
+# ✅ Inisialisasi preprocessor dengan kolom sesuai training pipeline
+preprocessor = SklearnPreprocessor(
+    num_columns=['Age', 'Fare'],
+    ordinal_columns=['Pclass'],
+    nominal_columns=['Sex', 'Embarked']
+)
+
+# ✅ Endpoint MLflow model API yang sudah diserve
+MODEL_API_URL = 'http://127.0.0.1:5005/invocations'
 
 @app.route('/metrics')
 def metrics_route():
@@ -38,7 +44,16 @@ def predict():
         input_df = pd.DataFrame([data])
         input_df_processed = preprocessor.transform(input_df)
 
-        prediction = model.predict(input_df_processed)[0]
+        # Format input sesuai format JSON yang diminta MLflow
+        json_data = {
+            "columns": input_df_processed.columns.tolist(),
+            "data": input_df_processed.values.tolist()
+        }
+
+        response = requests.post(MODEL_API_URL, json=json_data)
+        response.raise_for_status()  # Akan raise error kalau response 4xx/5xx
+
+        prediction = response.json()[0]
         status = "✅ Survived" if prediction == 1 else "❌ Not Survived"
 
         return render_template('index.html', prediction_text=f"Prediction: {status}")
@@ -55,7 +70,16 @@ def predict_csv():
         df = pd.read_csv(file)
         df_processed = preprocessor.transform(df)
 
-        df['Prediction'] = model.predict(df_processed)
+        json_data = {
+            "columns": df_processed.columns.tolist(),
+            "data": df_processed.values.tolist()
+        }
+
+        response = requests.post(MODEL_API_URL, json=json_data)
+        response.raise_for_status()
+
+        predictions = response.json()
+        df['Prediction'] = predictions
         df['Prediction_Label'] = df['Prediction'].apply(lambda x: 'Survived' if x == 1 else 'Not Survived')
 
         result_table = df.to_html(classes='table table-bordered', index=False)
