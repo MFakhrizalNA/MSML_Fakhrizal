@@ -55,11 +55,10 @@ with mlflow.start_run(run_name="Autolog - RandomForestClassifier"):
     pipeline.fit(X_train, y_train)
     end = time.time()
 
-    # Prediksi
+    # Prediksi dan evaluasi
     y_pred = pipeline.predict(X_test)
     y_proba = pipeline.predict_proba(X_test)[:, 1]
 
-    # Evaluasi tambahan (autolog hanya log basic metrics)
     acc = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred)
     recall = recall_score(y_test, y_pred)
@@ -68,12 +67,6 @@ with mlflow.start_run(run_name="Autolog - RandomForestClassifier"):
     logloss = log_loss(y_test, y_proba)
     training_time = end - start
     support = y_test.value_counts().to_dict()
-
-    # Log metrik tambahan manual (optional)
-    mlflow.log_metric("Log_Loss", logloss)
-    mlflow.log_metric("Training_Time", training_time)
-    mlflow.log_metric("Support_Positive", support.get(1, 0))
-    mlflow.log_metric("Support_Negative", support.get(0, 0))
 
     # Logging dataset sebagai artefak
     mlflow.log_artifact(csv_path, artifact_path="dataset")
